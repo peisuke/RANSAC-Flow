@@ -83,7 +83,7 @@ def Homography(X, Y):
     #svd compositionq
     u, s, v = np.linalg.svd(A)
     #reshape the min singular value into a 3 by 3 matrix
-    H21 = torch.tensor(np.reshape(v[:, 8], (N, 3, 3))).float().cuda()
+    H21 = torch.tensor(np.reshape(v[:, 8], (N, 3, 3))).float().to(device)
     return H21
 
 def Translation(X, Y) : 

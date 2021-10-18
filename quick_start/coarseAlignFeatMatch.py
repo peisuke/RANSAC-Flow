@@ -19,17 +19,16 @@ if not sys.warnoptions:
 sys.path.append('../utils/')
 import outil
 
-from scipy.misc import imresize
-from scipy import signal
 ## resize image according to the minsize, at the same time resize the x,y coordinate
 
 
 class CoarseAlign:
-    def __init__(self, nbScale, nbIter, tolerance, transform, minSize, segId = 1, segFg = True, imageNet = True, scaleR = 2):
+    def __init__(self, nbScale, nbIter, tolerance, transform, minSize, segId = 1, segFg = True, imageNet = True, scaleR = 2, device = 'cpu'):
         
         ## nb iteration, tolerance, transform
         self.nbIter = nbIter
         self.tolerance = tolerance
+        self.device = device
         
         ## resnet 50 
         resnet_feature_layers = ['conv1','bn1','relu','maxpool','layer1','layer2','layer3']
@@ -49,7 +48,7 @@ class CoarseAlign:
         last_layer_idx = resnet_feature_layers.index('layer3')
         self.net = torch.nn.Sequential(*resnet_module_list[:last_layer_idx+1])
 
-        self.net.cuda()
+        self.net.to(self.device)
         self.net.eval()
         
         ## preprocessing
@@ -98,13 +97,13 @@ class CoarseAlign:
                 IsList.append(self.ResizeMaxSize(Is_org, int(self.minSize * self.scaleList[i]) ))
             
             self.Is = IsList[len(self.scaleList) // 2]
-            self.IsTensor = self.toTensor(self.Is).unsqueeze(0).cuda()
+            self.IsTensor = self.toTensor(self.Is).unsqueeze(0).to(self.device)
             
             self.featsMultiScale = []
             self.WMultiScale = []
             self.HMultiScale = []
             for i in range(len(self.scaleList)) : 
-                feat = F.normalize(self.net(self.preproc(IsList[i]).unsqueeze(0).cuda()))
+                feat = F.normalize(self.net(self.preproc(IsList[i]).unsqueeze(0).to(self.device)))
                 Ws, Hs = outil.getWHTensor(feat)
                 self.featsMultiScale.append( feat.contiguous().view(1024, -1) )
                 self.WMultiScale.append(Ws)
@@ -121,8 +120,8 @@ class CoarseAlign:
     def setTarget(self, It_org) : 
         with torch.no_grad() : 
             self.It = self.ResizeMaxSize(It_org, self.minSize)
-            self.ItTensor = self.toTensor(self.It).unsqueeze(0).cuda()
-            self.featt = F.normalize(self.net(self.preproc(self.It).unsqueeze(0).cuda()))
+            self.ItTensor = self.toTensor(self.It).unsqueeze(0).to(self.device)
+            self.featt = F.normalize(self.net(self.preproc(self.It).unsqueeze(0).to(self.device)))
             self.Wt, self.Ht = outil.getWHTensor(self.featt)
             
     
@@ -135,10 +134,10 @@ class CoarseAlign:
         ## input mask should be array, 2 dimension, h, w
         with torch.no_grad() :  
             MtExtend = (1 - Mt).astype(np.float32) # 1 is sky, 0 is bulding
-            MtExtend = torch.from_numpy(MtExtend).cuda().unsqueeze(0).unsqueeze(0)
+            MtExtend = torch.from_numpy(MtExtend).to(self.device).unsqueeze(0).unsqueeze(0)
             
             MtTensor = F.interpolate(input = MtExtend, size = (self.featt.size()[2], self.featt.size()[3]), mode = 'bilinear')
-            MtTensor = (MtTensor > 0.5).type(torch.cuda.FloatTensor)
+            MtTensor = (MtTensor > 0.5).type(torch.FloatTensor).to(self.device)
             
             #### -- grid     
             featt = (self.featt * MtTensor).contiguous().view(1024, -1) 
@@ -151,7 +150,7 @@ class CoarseAlign:
             H2MutualMatch = self.Ht[index2] 
             
             ## RANSAC 
-            ones = torch.cuda.FloatTensor(W1MutualMatch.size(0)).fill_(1)
+            ones = torch.FloatTensor(W1MutualMatch.size(0)).fill_(1).to(self.device)
             match1 = torch.cat((H1MutualMatch.unsqueeze(1), W1MutualMatch.unsqueeze(1), ones.unsqueeze(1)), dim=1)
             match2 = torch.cat((H2MutualMatch.unsqueeze(1), W2MutualMatch.unsqueeze(1), ones.unsqueeze(1)), dim=1)
             
